@@ -1,0 +1,5 @@
+Metric,Baseline,KD,Improvement (%)
+precision,0.6219,0.6194,-0.39
+recall,0.4771,0.4781,0.20
+mAP50,0.5178,0.5188,0.20
+mAP50-95,0.3683,0.3683,-0.02

@@ -1,0 +1,70 @@
+{
+    "experiment_info": {
+        "timestamp": "20250925_192139",
+        "timestamp_kst": "2025-09-26 10:46:05 KST",
+        "data": "coco.yaml",
+        "dataset_size": "Full COCO 2017 (118,287 train, 5,000 val)",
+        "epochs": 25,
+        "batch_size": 64,
+        "teacher_model": "yolo11m",
+        "student_model": "yolo11n",
+        "distillation_loss": "cwd",
+        "device": "0"
+    },
+    "baseline": {
+        "training_time": 23235.36035656929,
+        "training_time_str": "6h 27m 15s",
+        "model_path": "/workspace/projects/ed/jin/yolo-distiller/runs/detect/baseline_yolo11n_coco_20250925_192139/weights/best.pt",
+        "metrics": {
+            "metrics/precision(B)": 0.6218572512114856,
+            "metrics/recall(B)": 0.47710956440680585,
+            "metrics/mAP50(B)": 0.5178037820134913,
+            "metrics/mAP50-95(B)": 0.3683093440177246,
+            "fitness": 0.38325878781730127
+        }
+    },
+    "knowledge_distillation": {
+        "training_time": 31875.477821588516,
+        "training_time_str": "8h 51m 15s",
+        "model_path": "/workspace/projects/ed/jin/yolo-distiller/runs/detect/kd_yolo11n_from_11m_coco_20250925_192139/weights/best.pt",
+        "metrics": {
+            "metrics/precision(B)": 0.6194442739351942,
+            "metrics/recall(B)": 0.4780600413408432,
+            "metrics/mAP50(B)": 0.518819905385618,
+            "metrics/mAP50-95(B)": 0.3682531751651558,
+            "fitness": 0.38330984818720204
+        }
+    },
+    "comparison": {
+        "metrics/precision(B)": {
+            "baseline": 0.6218572512114856,
+            "kd": 0.6194442739351942,
+            "improvement_percent": -0.3880275210412871
+        },
+        "metrics/recall(B)": {
+            "baseline": 0.47710956440680585,
+            "kd": 0.4780600413408432,
+            "improvement_percent": 0.1992156529536483
+        },
+        "metrics/mAP50(B)": {
+            "baseline": 0.5178037820134913,
+            "kd": 0.518819905385618,
+            "improvement_percent": 0.19623714762673708
+        },
+        "metrics/mAP50-95(B)": {
+            "baseline": 0.3683093440177246,
+            "kd": 0.3682531751651558,
+            "improvement_percent": -0.015250455488323924
+        },
+        "training_time": {
+            "baseline": 23235.36035656929,
+            "kd": 31875.477821588516,
+            "baseline_str": "6h 27m 15s",
+            "kd_str": "8h 51m 15s"
+        },
+        "model_size_mb": {
+            "baseline": 5.2575883865356445,
+            "kd": 5.2857255935668945
+        }
+    }
+}
