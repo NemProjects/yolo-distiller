@@ -16,17 +16,21 @@ This is a fork of Ultralytics YOLO with additional knowledge distillation capabi
 - **ultralytics/data/**: Dataset handling, data loaders, and augmentation
 - **ultralytics/utils/**: Utility functions for losses, metrics, and operations
 
-### Knowledge Distillation Extension
-The main enhancement is knowledge distillation support:
-- Teacher model integration in training pipeline (ultralytics/engine/trainer.py)
-- Distillation losses: Channel-Wise Distillation (CWD) and others
-- Student-teacher architecture pairing for model compression
+### Knowledge Distillation Architecture
+The main enhancement is integrated directly in the trainer (ultralytics/engine/trainer.py):
+- **CWDLoss** (lines 58-94): Channel-Wise Distillation implementing arxiv.org/abs/2011.13256
+- **MGDLoss** (lines 96+): Mask Generation Distillation
+- **DistillationLoss** (line 215+): Main orchestrator that manages feature alignment and loss computation
+- Teacher model runs in parallel during training with feature hooks for intermediate layer matching
+- Distillation weight scaling and loss integration happens in main training loop
 
 ## Development Commands
 
 ### Installation
 ```bash
 pip install -r requirements.txt
+# For development with all tools:
+pip install -e ".[dev]"
 ```
 
 ### Training with Knowledge Distillation
@@ -39,7 +43,7 @@ student_model = YOLO("yolo11n.pt")
 student_model.train(
     data="<data-path>",
     teacher=teacher_model.model,  # None to disable distillation
-    distillation_loss="cwd",      # Available: "cwd", others
+    distillation_loss="cwd",      # Available: "cwd", "mgd"
     epochs=100,
     batch=16,
     workers=0,
@@ -65,8 +69,10 @@ yolo export model=yolo11n-cls.pt format=onnx imgsz=224,128
 ### Testing and Quality Assurance
 Based on pyproject.toml configuration:
 ```bash
-# Run tests with pytest
+# Run tests with pytest (includes doctests and slow tests)
 pytest --doctest-modules --durations=30 --color=yes
+pytest --slow  # Include slow tests
+pytest -k "test_specific_function"  # Run specific test
 
 # Code formatting with yapf
 yapf --in-place --recursive ultralytics/
@@ -75,13 +81,13 @@ yapf --in-place --recursive ultralytics/
 ruff check ultralytics/
 ruff format ultralytics/
 
-# Type checking (if mypy is available)
-# No explicit mypy configuration found in pyproject.toml
+# Run knowledge distillation experiment
+python test_kd_coco_full.py
 ```
 
 ### Documentation
 ```bash
-# Build documentation (if mkdocs is available)
+# Build documentation (requires dev dependencies)
 mkdocs serve
 ```
 
@@ -94,23 +100,38 @@ The CLI automatically detects model architecture from filename:
 - Files containing "sam_", "sam2_", or "sam2.1_": Uses SAM class
 - Default: Uses YOLO class
 
-### Configuration
-- Main config: Uses ultralytics/cfg/__init__.py for argument parsing
-- Default settings: Managed through SETTINGS system
-- Custom configs: Can override with cfg=path/to/config.yaml
+### Configuration System
+- Default settings: ultralytics/cfg/default.yaml contains all training hyperparameters
+- Argument parsing: ultralytics/cfg/__init__.py handles CLI and programmatic arguments
+- Settings system: SETTINGS object manages global configurations
+- Custom configs: Override with cfg=path/to/config.yaml
 
-### Key Directories
-- weights saved to: runs/detect/train/weights/ (or similar based on task)
-- Results: CSV files and plots saved alongside weights
-- Docker support: Multiple Dockerfiles available in docker/ directory
+### Knowledge Distillation Implementation Details
+- Teacher model integration happens in BaseTrainer.__init__() (ultralytics/engine/trainer.py:383+)
+- Feature hooks are registered in DistillationLoss.register_hook() method
+- Loss computation occurs during training loop with distillation weight scaling
+- Both CWD and MGD losses operate on intermediate feature maps, not just final outputs
+- Feature alignment modules handle channel dimension matching between student/teacher
+
+### Key Directories and Output
+- Training outputs: runs/detect/train/, runs/segment/train/, etc. (task-dependent)
+- Weights: saved to runs/{task}/train/weights/ with best.pt and last.pt
+- Results: CSV metrics, confusion matrix plots, training curves
+- Docker support: 9 different Dockerfiles in docker/ for various platforms (ARM64, Jetson, CPU-only, etc.)
 
 ## Development Tips
 
 ### Adding New Distillation Methods
-Look at ultralytics/models/utils/loss.py and the trainer implementation for existing distillation loss patterns.
+1. Implement loss class following CWDLoss/MGDLoss pattern in ultralytics/engine/trainer.py
+2. Add condition in DistillationLoss.__init__() for your distiller name
+3. Ensure forward() method accepts y_s (student) and y_t (teacher) feature lists
+4. Handle feature alignment if student/teacher have different channel dimensions
+
+### Testing Knowledge Distillation
+- Use test_kd_coco_full.py as reference for full COCO experiments
+- Supports Seoul timezone (KST) for logging
+- Compare baseline vs distillation training with metrics tracking
+- pytest markers: use `--slow` flag for time-intensive tests
 
 ### Model Extensions
-New model types should follow the pattern in ultralytics/models/ with separate modules for train, val, predict functionality.
-
-### Testing Specific Components
-Use pytest markers for slow tests: `pytest --slow` to include slow tests, or omit flag to skip them.
+New model types should follow the pattern in ultralytics/models/ with separate modules for train, val, predict functionality, and register in ultralytics/__init__.py imports.
