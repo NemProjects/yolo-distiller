@@ -1,0 +1,63 @@
+{
+    "experiment_info": {
+        "timestamp": "20250925_041125",
+        "data": "coco8.yaml",
+        "epochs": 50,
+        "batch_size": 16,
+        "teacher_model": "yolo11m",
+        "student_model": "yolo11n",
+        "distillation_loss": "cwd"
+    },
+    "baseline": {
+        "training_time": 56.84157919883728,
+        "model_path": "/workspace/projects/ed/jin/yolo-distiller/runs/detect/baseline_yolo11n_20250925_041125/weights/best.pt",
+        "metrics": {
+            "metrics/precision(B)": 0.6341960004403442,
+            "metrics/recall(B)": 0.7833333333333333,
+            "metrics/mAP50(B)": 0.910051981584965,
+            "metrics/mAP50-95(B)": 0.6514548404797419,
+            "fitness": 0.6773145545902642
+        }
+    },
+    "knowledge_distillation": {
+        "training_time": 53.65267753601074,
+        "model_path": "/workspace/projects/ed/jin/yolo-distiller/runs/detect/kd_yolo11n_from_11m_20250925_041125/weights/best.pt",
+        "metrics": {
+            "metrics/precision(B)": 0.6327343972593998,
+            "metrics/recall(B)": 0.7833333333333333,
+            "metrics/mAP50(B)": 0.908735167206041,
+            "metrics/mAP50-95(B)": 0.6471857871654593,
+            "fitness": 0.6733407251695174
+        }
+    },
+    "comparison": {
+        "metrics/precision(B)": {
+            "baseline": 0.6341960004403442,
+            "kd": 0.6327343972593998,
+            "improvement_percent": -0.2304655311495984
+        },
+        "metrics/recall(B)": {
+            "baseline": 0.7833333333333333,
+            "kd": 0.7833333333333333,
+            "improvement_percent": 0.0
+        },
+        "metrics/mAP50(B)": {
+            "baseline": 0.910051981584965,
+            "kd": 0.908735167206041,
+            "improvement_percent": -0.1446966113551742
+        },
+        "metrics/mAP50-95(B)": {
+            "baseline": 0.6514548404797419,
+            "kd": 0.6471857871654593,
+            "improvement_percent": -0.6553107059790703
+        },
+        "training_time": {
+            "baseline": 56.84157919883728,
+            "kd": 53.65267753601074
+        },
+        "model_size_mb": {
+            "baseline": 5.2858476638793945,
+            "kd": 5.3139848709106445
+        }
+    }
+}
