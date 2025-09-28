@@ -60,7 +60,7 @@ class CWDLoss(nn.Module):
     <https://arxiv.org/abs/2011.13256>`_.
     """
 
-    def __init__(self, channels_s, channels_t, tau=1.0):
+    def __init__(self, channels_s, channels_t, tau=3.0):  # Starting tau for dynamic temperature scaling
         super().__init__()
         self.tau = tau
 
@@ -81,7 +81,8 @@ class CWDLoss(nn.Module):
             assert s.shape == t.shape
             N, C, H, W = s.shape
 
-            # normalize in channel dimension
+            # normalize in channel dimension with temperature scaling
+            # Temperature scaling: higher tau = softer probability distribution
             softmax_pred_T = F.softmax(t.view(-1, W * H) / self.tau, dim=1)
 
             logsoftmax = torch.nn.LogSoftmax(dim=1)
@@ -97,7 +98,7 @@ class MGDLoss(nn.Module):
     def __init__(self,
                  student_channels,
                  teacher_channels,
-                 alpha_mgd=0.00002,
+                 alpha_mgd=0.3,  # Dynamic alpha will override this, starting value for adaptive scheduling
                  lambda_mgd=0.65,
                  ):
         super(MGDLoss, self).__init__()
@@ -150,7 +151,7 @@ class MGDLoss(nn.Module):
 
 
 class FeatureLoss(nn.Module):
-    def __init__(self, channels_s, channels_t, distiller='mgd', loss_weight=1.0):
+    def __init__(self, channels_s, channels_t, distiller='mgd', loss_weight=2.5):  # Increased loss_weight from 1.0 to 2.5
         super(FeatureLoss, self).__init__()
         self.loss_weight = loss_weight
         self.distiller = distiller
@@ -699,14 +700,42 @@ class BaseTrainer:
                         (self.tloss * i + self.loss_items) / (i + 1) if self.tloss is not None else self.loss_items
                     )
                     
-                # Add more distillation logic
+                # Add more distillation logic with adaptive scheduling
                 if self.teacher is not None:
-                    distill_weight = ((1 - math.cos(i * math.pi / len(self.train_loader))) / 2) * (0.1 - 1) + 1
+                    # Adaptive alpha scheduling: starts at 0.5 and decreases to 0.1
+                    progress = epoch / self.epochs
+                    adaptive_alpha = max(0.1, 0.5 * (1 - progress))  # 0.5 → 0.1 over training
+
+                    # Dynamic temperature: extended scheduling for long training
+                    if epoch < 30:
+                        dynamic_tau = 3.0      # Early: soft distributions
+                    elif epoch < 60:
+                        dynamic_tau = 2.5      # Mid-early: moderate distributions
+                    elif epoch < 100:
+                        dynamic_tau = 2.0      # Mid: balanced distributions
+                    else:
+                        dynamic_tau = 1.5      # Late: sharp distributions
+
+                    # Extended KD scheduling for long training
+                    if epoch < 40:
+                        distill_weight = 2.0 * (1 - epoch / 40)      # 2.0 → 0 by epoch 40
+                    elif epoch < 100:
+                        distill_weight = 0.3 * (1 - (epoch - 40) / 60)  # 0.3 → 0 by epoch 100
+                    else:
+                        distill_weight = 0.05  # Very minimal KD after epoch 100
+
                     with torch.no_grad():
                         pred = self.teacher(batch['img'])
-                        
+
+                    # Update loss modules with dynamic parameters
+                    if hasattr(distillation_loss.distill_loss_fn, 'feature_loss'):
+                        if hasattr(distillation_loss.distill_loss_fn.feature_loss, 'alpha_mgd'):
+                            distillation_loss.distill_loss_fn.feature_loss.alpha_mgd = adaptive_alpha
+                        if hasattr(distillation_loss.distill_loss_fn.feature_loss, 'tau'):
+                            distillation_loss.distill_loss_fn.feature_loss.tau = dynamic_tau
+
                     self.d_loss = distillation_loss.get_loss()
-                    self.d_loss *- distill_weight
+                    self.d_loss *= distill_weight
                     self.loss += self.d_loss
 
                 # Backward
