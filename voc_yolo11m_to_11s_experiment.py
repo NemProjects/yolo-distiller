@@ -67,11 +67,13 @@ def run_baseline_yolo11s(epochs=70, batch=64, workers=12):  # Changed to 70 epoc
         "results": results
     }
 
-def run_kd_yolo11m_to_11s(epochs=70, batch=64, workers=12):  # Changed to 70 epochs for thorough KD validation
+def run_kd_yolo11m_to_11s(epochs=70, batch=64, workers=12, name_suffix=""):  # Changed to 70 epochs for thorough KD validation
     """YOLOv11m → YOLOv11s Knowledge Distillation 학습"""
     print("=" * 60)
     print("🎓 YOLOv11m → YOLOv11s KD 학습 시작")
     print(f"📊 설정: epochs={epochs}, batch={batch}, workers={workers}")
+    if name_suffix:
+        print(f"📂 실험명 접미사: {name_suffix}")
     print("=" * 60)
 
     start_time = time.time()
@@ -83,6 +85,10 @@ def run_kd_yolo11m_to_11s(epochs=70, batch=64, workers=12):  # Changed to 70 epo
     print(f"👨‍🏫 Teacher: YOLOv11m ({teacher_model.model.model[-1].nc} classes)")
     print(f"👨‍🎓 Student: YOLOv11s ({student_model.model.model[-1].nc} classes)")
 
+    # 실험명 생성 (접미사 포함)
+    base_name = f"voc_kd_yolo11s_from_11m_optimized_{get_kst_timestamp()[0]}"
+    experiment_name = f"{base_name}_{name_suffix}" if name_suffix else base_name
+
     # KD 학습 실행
     results = student_model.train(
         data="VOC.yaml",
@@ -92,7 +98,7 @@ def run_kd_yolo11m_to_11s(epochs=70, batch=64, workers=12):  # Changed to 70 epo
         batch=batch,
         workers=workers,
         exist_ok=True,
-        name=f"voc_kd_yolo11s_from_11m_optimized_{get_kst_timestamp()[0]}"
+        name=experiment_name
     )
 
     end_time = time.time()
