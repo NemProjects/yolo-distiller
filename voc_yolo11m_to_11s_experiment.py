@@ -481,6 +481,58 @@ def test_one_epoch():
     print(f"📊 베이스라인 시간: {baseline_result['training_time_str']}")
     print(f"🎓 KD 시간: {kd_result['training_time_str']}")
 
+def test_extended_kd_300():
+    """확장된 KD 테스트 - 300 에포크 (베이스라인 70 vs KD 300)"""
+    print("🚀 확장된 KD 테스트 시작 (300 에포크)")
+    print("📊 베이스라인 70 에포크 vs KD 300 에포크 비교")
+    print("📊 최신 Adaptive 개선사항 적용:")
+    print("   - Extended Adaptive Alpha: 0.5 → 0.1 (더 긴 스케줄링)")
+    print("   - Extended Temperature: 3.0 → 2.5 → 2.0 → 1.5 (단계적 감소)")
+    print("   - Long-term KD: 300 에포크에 맞춘 확장 스케줄링")
+    print("   - 목표: 베이스라인 대비 2-3% 성능 향상")
+
+    # 기존 베이스라인에서 70 에포크 성능 추출
+    print("1️⃣ 기존 베이스라인에서 70 에포크 성능 추출")
+    baseline_csv = "/workspace/projects/ed/jin/yolo-distiller/runs/detect/voc_baseline_yolo11s_optimized_20250928_095825/results.csv"
+    baseline_metrics = extract_epoch_metrics(baseline_csv, 70)
+
+    if baseline_metrics:
+        print(f"   ✅ 베이스라인 70 에포크 성능:")
+        print(f"      mAP50-95: {baseline_metrics['metrics/mAP50-95(B)']:.5f}")
+        print(f"      mAP50: {baseline_metrics['metrics/mAP50(B)']:.5f}")
+        print(f"      Precision: {baseline_metrics['metrics/precision(B)']:.5f}")
+        print(f"      Recall: {baseline_metrics['metrics/recall(B)']:.5f}")
+    else:
+        print("   ❌ 베이스라인 데이터를 찾을 수 없습니다.")
+        return
+
+    # KD 300 에포크 학습
+    print("2️⃣ YOLOv11m → YOLOv11s Extended KD 300 에포크 학습")
+    print("   ⏰ 예상 소요시간: ~11.5시간")
+    kd_result = run_kd_yolo11m_to_11s(epochs=300, batch=64, workers=12,
+                                       name_suffix="300ep")
+    kd_metrics = extract_metrics_from_results(kd_result["model_path"].parent.parent)
+
+    # 결과 비교
+    print("3️⃣ 최종 성능 비교")
+    improvement = ((kd_metrics['metrics/mAP50-95(B)'] - baseline_metrics['metrics/mAP50-95(B)']) /
+                   baseline_metrics['metrics/mAP50-95(B)'] * 100)
+
+    print(f"   📈 베이스라인 (70 epochs): mAP50-95 = {baseline_metrics['metrics/mAP50-95(B)']:.5f}")
+    print(f"   📈 KD (300 epochs): mAP50-95 = {kd_metrics['metrics/mAP50-95(B)']:.5f}")
+    print(f"   🎯 성능 향상: {improvement:.2f}%")
+
+    if improvement >= 2.0:
+        print("   ✅ 목표 달성! 2% 이상 성능 향상")
+    else:
+        print("   📊 추가 개선 방법 검토 필요")
+
+    return {
+        "baseline_metrics": baseline_metrics,
+        "kd_metrics": kd_metrics,
+        "improvement_percent": improvement
+    }
+
 if __name__ == "__main__":
     import sys
 
@@ -493,9 +545,20 @@ if __name__ == "__main__":
             test_adaptive_kd_only()
         elif sys.argv[1] == "extended_150":
             test_extended_kd_150()
+        elif sys.argv[1] == "extended_300":
+            test_extended_kd_300()
         elif sys.argv[1] == "thorough":
             test_thorough_kd()
         else:
-            run_full_experiment()
+            print("❌ 지원하지 않는 명령어입니다.")
+            print("사용 가능한 명령어: test, adaptive, kd_only, extended_150, extended_300, thorough")
     else:
-        run_full_experiment()
+        print("🚀 VOC YOLOv11m → YOLOv11s Knowledge Distillation 테스트")
+        print("사용법: python voc_yolo11m_to_11s_experiment.py [command]")
+        print("명령어:")
+        print("  test         - 1 에포크 테스트")
+        print("  adaptive     - 적응형 개선 실험")
+        print("  kd_only      - KD만 실행 (베이스라인 재사용)")
+        print("  extended_150 - 150 에포크 확장 KD")
+        print("  extended_300 - 300 에포크 확장 KD")
+        print("  thorough     - 완전한 실험 (베이스라인 + KD)")
