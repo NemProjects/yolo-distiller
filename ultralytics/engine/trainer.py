@@ -706,23 +706,56 @@ class BaseTrainer:
                     progress = epoch / self.epochs
                     adaptive_alpha = max(0.1, 0.5 * (1 - progress))  # 0.5 → 0.1 over training
 
-                    # Dynamic temperature: extended scheduling for long training
-                    if epoch < 30:
-                        dynamic_tau = 3.0      # Early: soft distributions
-                    elif epoch < 60:
-                        dynamic_tau = 2.5      # Mid-early: moderate distributions
-                    elif epoch < 100:
-                        dynamic_tau = 2.0      # Mid: balanced distributions
+                    # Dynamic temperature: adaptive scheduling for different epoch lengths
+                    if self.epochs <= 150:
+                        # Original 150 epoch schedule
+                        if epoch < 30:
+                            dynamic_tau = 3.0      # Early: soft distributions
+                        elif epoch < 60:
+                            dynamic_tau = 2.5      # Mid-early: moderate distributions
+                        elif epoch < 100:
+                            dynamic_tau = 2.0      # Mid: balanced distributions
+                        else:
+                            dynamic_tau = 1.5      # Late: sharp distributions
                     else:
-                        dynamic_tau = 1.5      # Late: sharp distributions
+                        # Extended schedule for 300+ epochs - more gradual transitions
+                        progress = epoch / self.epochs
+                        if progress < 0.15:     # First 15% (0-45 epochs for 300ep)
+                            dynamic_tau = 3.0
+                        elif progress < 0.35:   # 15-35% (45-105 epochs)
+                            dynamic_tau = 2.7
+                        elif progress < 0.55:   # 35-55% (105-165 epochs)
+                            dynamic_tau = 2.3
+                        elif progress < 0.75:   # 55-75% (165-225 epochs)
+                            dynamic_tau = 2.0
+                        else:                   # Final 25% (225-300 epochs)
+                            dynamic_tau = 1.5
 
-                    # Extended KD scheduling for long training
-                    if epoch < 40:
-                        distill_weight = 2.0 * (1 - epoch / 40)      # 2.0 → 0 by epoch 40
-                    elif epoch < 100:
-                        distill_weight = 0.3 * (1 - (epoch - 40) / 60)  # 0.3 → 0 by epoch 100
+                    # Extended KD scheduling: adaptive for different epoch lengths
+                    if self.epochs <= 150:
+                        # Original 150 epoch schedule
+                        if epoch < 40:
+                            distill_weight = 2.0 * (1 - epoch / 40)      # 2.0 → 0 by epoch 40
+                        elif epoch < 100:
+                            distill_weight = 0.3 * (1 - (epoch - 40) / 60)  # 0.3 → 0 by epoch 100
+                        else:
+                            distill_weight = 0.05  # Very minimal KD after epoch 100
                     else:
-                        distill_weight = 0.05  # Very minimal KD after epoch 100
+                        # Extended schedule for 300+ epochs - longer KD phases
+                        mid_point = self.epochs // 3     # 100 epochs for 300ep
+                        late_point = self.epochs * 2 // 3  # 200 epochs for 300ep
+
+                        if epoch < mid_point:
+                            # First third: strong distillation 1.5 → 0.5
+                            distill_weight = 1.5 * (1 - epoch / mid_point) + 0.5
+                        elif epoch < late_point:
+                            # Second third: moderate distillation 0.5 → 0.1
+                            progress = (epoch - mid_point) / (late_point - mid_point)
+                            distill_weight = 0.5 * (1 - progress) + 0.1
+                        else:
+                            # Final third: minimal distillation 0.1 → 0.02
+                            progress = (epoch - late_point) / (self.epochs - late_point)
+                            distill_weight = 0.1 * (1 - progress) + 0.02
 
                     with torch.no_grad():
                         pred = self.teacher(batch['img'])
