@@ -67,11 +67,12 @@ def run_baseline_yolo11s(epochs=70, batch=64, workers=12):  # Changed to 70 epoc
         "results": results
     }
 
-def run_kd_yolo11m_to_11s(epochs=70, batch=64, workers=12, name_suffix="", patience=100, weight_decay=0.0005):  # Changed to 70 epochs for thorough KD validation
+def run_kd_yolo11m_to_11s(epochs=70, batch=64, workers=12, name_suffix="", patience=100, weight_decay=0.0005, distillation_loss="cwd"):  # Changed to 70 epochs for thorough KD validation
     """YOLOv11m → YOLOv11s Knowledge Distillation 학습"""
     print("=" * 60)
     print("🎓 YOLOv11m → YOLOv11s KD 학습 시작")
     print(f"📊 설정: epochs={epochs}, batch={batch}, workers={workers}")
+    print(f"📊 Distillation Loss: {distillation_loss}")
     if name_suffix:
         print(f"📂 실험명 접미사: {name_suffix}")
     if patience != 100:
@@ -97,7 +98,7 @@ def run_kd_yolo11m_to_11s(epochs=70, batch=64, workers=12, name_suffix="", patie
     results = student_model.train(
         data="VOC.yaml",
         teacher=teacher_model.model,
-        distillation_loss="cwd",
+        distillation_loss=distillation_loss,
         epochs=epochs,
         patience=patience,
         batch=batch,
@@ -601,6 +602,174 @@ def test_optimized_kd_200():
         "improvement_percent": improvement
     }
 
+def test_verified_kd_150():
+    """검증된 KD 설정 - 150 에포크 (최고 성능 입증)"""
+    print("🚀 검증된 KD 150 에포크 학습 시작")
+    print("📊 입증된 최고 성능 설정:")
+    print("   - 150 에포크 학습")
+    print("   - Weight decay: 0.0005 (검증된 값)")
+    print("   - Early stopping: patience=100 (기본값)")
+    print("   - 입증된 성능: 베이스라인 대비 +0.86%p (68.15% → 69.01%)")
+    print("   - 목표: 안정적이고 재현 가능한 성능 향상")
+
+    # 기존 베이스라인 성능 추출
+    print("\n1️⃣ 기존 베이스라인에서 70 에포크 성능 추출")
+    baseline_csv = "/workspace/projects/ed/jin/yolo-distiller/runs/detect/voc_baseline_yolo11s_optimized_20250928_095825/results.csv"
+    baseline_metrics = extract_epoch_metrics(baseline_csv, 70)
+
+    if baseline_metrics:
+        print(f"   ✅ 베이스라인 70 에포크 성능:")
+        print(f"      mAP50-95: {baseline_metrics['metrics/mAP50-95(B)']:.5f} ({baseline_metrics['metrics/mAP50-95(B)']*100:.2f}%)")
+    else:
+        print("   ❌ 베이스라인 데이터를 찾을 수 없습니다.")
+        return
+
+    # KD 150 에포크 검증된 설정 학습
+    print("\n2️⃣ YOLOv11m → YOLOv11s Verified KD 150 에포크 학습")
+    print("   ⏰ 예상 소요시간: ~5.8시간")
+    kd_result = run_kd_yolo11m_to_11s(
+        epochs=150,
+        patience=100,      # 기본값 유지
+        batch=64,
+        workers=12,
+        weight_decay=0.0005,  # 검증된 값 유지
+        distillation_loss="cwd",
+        name_suffix="150ep_verified"
+    )
+    kd_metrics = extract_metrics_from_results(kd_result["model_path"].parent.parent)
+
+    # 결과 비교
+    print("\n3️⃣ 최종 성능 비교")
+    improvement = ((kd_metrics['metrics/mAP50-95(B)'] - baseline_metrics['metrics/mAP50-95(B)']) /
+                   baseline_metrics['metrics/mAP50-95(B)'] * 100)
+
+    print(f"   📈 베이스라인 (70 epochs): mAP50-95 = {baseline_metrics['metrics/mAP50-95(B)']*100:.2f}%")
+    print(f"   📈 KD 150ep verified: mAP50-95 = {kd_metrics['metrics/mAP50-95(B)']*100:.2f}%")
+    print(f"   🎯 성능 향상: {improvement:.2f}% ({(kd_metrics['metrics/mAP50-95(B)'] - baseline_metrics['metrics/mAP50-95(B)'])*100:+.2f}%p)")
+
+    if improvement >= 0.8:
+        print("   ✅ 검증된 성능 재현! 0.8%p 이상 성능 향상")
+    else:
+        print("   ⚠️ 예상보다 낮은 성능")
+
+    return {
+        "baseline_metrics": baseline_metrics,
+        "kd_metrics": kd_metrics,
+        "improvement_percent": improvement
+    }
+
+def test_attention_kd_150():
+    """Attention Transfer KD - 150 에포크"""
+    print("🚀 Attention Transfer KD 150 에포크 학습 시작")
+    print("📊 Attention-based Knowledge Distillation:")
+    print("   - Attention Transfer Loss (arxiv.org/abs/1612.03928)")
+    print("   - 공간 attention map을 teacher에서 student로 전달")
+    print("   - 150 에포크 학습")
+    print("   - Weight decay: 0.0005")
+    print("   - 목표: CWD 대비 추가 성능 향상")
+
+    # 기존 베이스라인 성능 추출
+    print("\n1️⃣ 기존 베이스라인에서 70 에포크 성능 추출")
+    baseline_csv = "/workspace/projects/ed/jin/yolo-distiller/runs/detect/voc_baseline_yolo11s_optimized_20250928_095825/results.csv"
+    baseline_metrics = extract_epoch_metrics(baseline_csv, 70)
+
+    if baseline_metrics:
+        print(f"   ✅ 베이스라인 70 에포크 성능:")
+        print(f"      mAP50-95: {baseline_metrics['metrics/mAP50-95(B)']:.5f} ({baseline_metrics['metrics/mAP50-95(B)']*100:.2f}%)")
+    else:
+        print("   ❌ 베이스라인 데이터를 찾을 수 없습니다.")
+        return
+
+    # Attention KD 150 에포크 학습
+    print("\n2️⃣ YOLOv11m → YOLOv11s Attention KD 150 에포크 학습")
+    print("   ⏰ 예상 소요시간: ~5.8시간")
+    kd_result = run_kd_yolo11m_to_11s(
+        epochs=150,
+        patience=100,
+        batch=64,
+        workers=12,
+        weight_decay=0.0005,
+        distillation_loss="att",
+        name_suffix="150ep_attention"
+    )
+    kd_metrics = extract_metrics_from_results(kd_result["model_path"].parent.parent)
+
+    # 결과 비교
+    print("\n3️⃣ 최종 성능 비교")
+    improvement = ((kd_metrics['metrics/mAP50-95(B)'] - baseline_metrics['metrics/mAP50-95(B)']) /
+                   baseline_metrics['metrics/mAP50-95(B)'] * 100)
+
+    print(f"   📈 베이스라인 (70 epochs): mAP50-95 = {baseline_metrics['metrics/mAP50-95(B)']*100:.2f}%")
+    print(f"   📈 Attention KD 150ep: mAP50-95 = {kd_metrics['metrics/mAP50-95(B)']*100:.2f}%")
+    print(f"   🎯 성능 향상: {improvement:.2f}% ({(kd_metrics['metrics/mAP50-95(B)'] - baseline_metrics['metrics/mAP50-95(B)'])*100:+.2f}%p)")
+
+    if improvement >= 1.0:
+        print("   ✅ 목표 달성! 1.0%p 이상 성능 향상")
+    else:
+        print("   📊 CWD 대비 성능 비교 필요")
+
+    return {
+        "baseline_metrics": baseline_metrics,
+        "kd_metrics": kd_metrics,
+        "improvement_percent": improvement
+    }
+
+def test_spatial_attention_kd_150():
+    """Spatial Attention Transfer KD - 150 에포크"""
+    print("🚀 Spatial Attention Transfer KD 150 에포크 학습 시작")
+    print("📊 Enhanced Spatial Attention KD:")
+    print("   - Learnable channel attention weights")
+    print("   - Temperature-scaled spatial attention")
+    print("   - 150 에포크 학습")
+    print("   - Weight decay: 0.0005")
+    print("   - 목표: Attention KD 대비 추가 개선")
+
+    # 기존 베이스라인 성능 추출
+    print("\n1️⃣ 기존 베이스라인에서 70 에포크 성능 추출")
+    baseline_csv = "/workspace/projects/ed/jin/yolo-distiller/runs/detect/voc_baseline_yolo11s_optimized_20250928_095825/results.csv"
+    baseline_metrics = extract_epoch_metrics(baseline_csv, 70)
+
+    if baseline_metrics:
+        print(f"   ✅ 베이스라인 70 에포크 성능:")
+        print(f"      mAP50-95: {baseline_metrics['metrics/mAP50-95(B)']:.5f} ({baseline_metrics['metrics/mAP50-95(B)']*100:.2f}%)")
+    else:
+        print("   ❌ 베이스라인 데이터를 찾을 수 없습니다.")
+        return
+
+    # Spatial Attention KD 150 에포크 학습
+    print("\n2️⃣ YOLOv11m → YOLOv11s Spatial Attention KD 150 에포크 학습")
+    print("   ⏰ 예상 소요시간: ~5.8시간")
+    kd_result = run_kd_yolo11m_to_11s(
+        epochs=150,
+        patience=100,
+        batch=64,
+        workers=12,
+        weight_decay=0.0005,
+        distillation_loss="spa",
+        name_suffix="150ep_spatial_attention"
+    )
+    kd_metrics = extract_metrics_from_results(kd_result["model_path"].parent.parent)
+
+    # 결과 비교
+    print("\n3️⃣ 최종 성능 비교")
+    improvement = ((kd_metrics['metrics/mAP50-95(B)'] - baseline_metrics['metrics/mAP50-95(B)']) /
+                   baseline_metrics['metrics/mAP50-95(B)'] * 100)
+
+    print(f"   📈 베이스라인 (70 epochs): mAP50-95 = {baseline_metrics['metrics/mAP50-95(B)']*100:.2f}%")
+    print(f"   📈 Spatial Attention KD 150ep: mAP50-95 = {kd_metrics['metrics/mAP50-95(B)']*100:.2f}%")
+    print(f"   🎯 성능 향상: {improvement:.2f}% ({(kd_metrics['metrics/mAP50-95(B)'] - baseline_metrics['metrics/mAP50-95(B)'])*100:+.2f}%p)")
+
+    if improvement >= 1.2:
+        print("   ✅ 우수! 1.2%p 이상 성능 향상")
+    else:
+        print("   📊 다른 방법과 비교 필요")
+
+    return {
+        "baseline_metrics": baseline_metrics,
+        "kd_metrics": kd_metrics,
+        "improvement_percent": improvement
+    }
+
 if __name__ == "__main__":
     import sys
 
@@ -617,19 +786,28 @@ if __name__ == "__main__":
             test_extended_kd_300()
         elif sys.argv[1] == "optimized_200":
             test_optimized_kd_200()
+        elif sys.argv[1] == "verified_150":
+            test_verified_kd_150()
+        elif sys.argv[1] == "attention_150":
+            test_attention_kd_150()
+        elif sys.argv[1] == "spatial_attention_150":
+            test_spatial_attention_kd_150()
         elif sys.argv[1] == "thorough":
             test_thorough_kd()
         else:
             print("❌ 지원하지 않는 명령어입니다.")
-            print("사용 가능한 명령어: test, adaptive, kd_only, extended_150, extended_300, optimized_200, thorough")
+            print("사용 가능한 명령어: test, adaptive, kd_only, extended_150, extended_300, optimized_200, verified_150, attention_150, spatial_attention_150, thorough")
     else:
         print("🚀 VOC YOLOv11m → YOLOv11s Knowledge Distillation 테스트")
         print("사용법: python voc_yolo11m_to_11s_experiment.py [command]")
         print("명령어:")
-        print("  test          - 1 에포크 테스트")
-        print("  adaptive      - 적응형 개선 실험")
-        print("  kd_only       - KD만 실행 (베이스라인 재사용)")
-        print("  extended_150  - 150 에포크 확장 KD")
-        print("  extended_300  - 300 에포크 확장 KD")
-        print("  optimized_200 - 200 에포크 최적화 KD (Early stopping + Weight decay)")
-        print("  thorough      - 완전한 실험 (베이스라인 + KD)")
+        print("  test                    - 1 에포크 테스트")
+        print("  adaptive                - 적응형 개선 실험")
+        print("  kd_only                 - KD만 실행 (베이스라인 재사용)")
+        print("  extended_150            - 150 에포크 확장 KD")
+        print("  extended_300            - 300 에포크 확장 KD")
+        print("  optimized_200           - 200 에포크 최적화 KD (Early stopping + Weight decay)")
+        print("  verified_150            - 150 에포크 검증된 KD (CWD)")
+        print("  attention_150           - 150 에포크 Attention Transfer KD ✨ NEW")
+        print("  spatial_attention_150   - 150 에포크 Spatial Attention KD ✨ NEW")
+        print("  thorough                - 완전한 실험 (베이스라인 + KD)")
