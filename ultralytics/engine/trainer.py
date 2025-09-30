@@ -150,6 +150,148 @@ class MGDLoss(nn.Module):
         return dis_loss
 
 
+class AttentionLoss(nn.Module):
+    """Attention Transfer for Knowledge Distillation.
+
+    Transfers spatial attention maps from teacher to student.
+    Based on "Paying More Attention to Attention" (https://arxiv.org/abs/1612.03928)
+    """
+
+    def __init__(self, channels_s, channels_t, p=2):
+        """
+        Args:
+            channels_s: Student channel dimensions
+            channels_t: Teacher channel dimensions
+            p: Power for attention map calculation (default: 2)
+        """
+        super().__init__()
+        self.p = p
+
+    def attention_map(self, fm, p=2):
+        """Calculate attention map from feature map.
+
+        Args:
+            fm: Feature map of shape (N, C, H, W)
+            p: Power for attention calculation
+
+        Returns:
+            Attention map of shape (N, H, W)
+        """
+        am = torch.pow(torch.abs(fm), p)
+        am = torch.sum(am, dim=1, keepdim=False)  # Sum over channel dimension
+        norm = torch.norm(am, p=2, dim=(1, 2), keepdim=True)
+        am = torch.div(am, norm + 1e-8)  # Normalize
+        return am
+
+    def forward(self, y_s, y_t):
+        """Forward computation.
+
+        Args:
+            y_s (list): Student feature maps with shape (N, C, H, W)
+            y_t (list): Teacher feature maps with shape (N, C, H, W)
+
+        Returns:
+            torch.Tensor: Attention transfer loss
+        """
+        assert len(y_s) == len(y_t)
+        losses = []
+
+        for s, t in zip(y_s, y_t):
+            # Calculate attention maps
+            s_attention = self.attention_map(s, self.p)
+            t_attention = self.attention_map(t, self.p)
+
+            # L2 loss between attention maps
+            loss = torch.norm(s_attention - t_attention, p=2) / (s_attention.shape[0])
+            losses.append(loss)
+
+        return sum(losses)
+
+
+class SpatialAttentionLoss(nn.Module):
+    """Enhanced Spatial Attention Transfer with learnable parameters.
+
+    Combines spatial attention transfer with channel-wise importance weighting.
+    """
+
+    def __init__(self, channels_s, channels_t, beta=1000.0):
+        """
+        Args:
+            channels_s: Student channel dimensions
+            channels_t: Teacher channel dimensions
+            beta: Temperature for spatial attention normalization
+        """
+        super().__init__()
+        self.beta = beta
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+        # Learnable channel attention weights
+        self.channel_attention = nn.ModuleList([
+            nn.Sequential(
+                nn.AdaptiveAvgPool2d(1),
+                nn.Conv2d(t_chan, t_chan // 4, 1),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(t_chan // 4, t_chan, 1),
+                nn.Sigmoid()
+            ).to(device) for t_chan in channels_t
+        ])
+
+    def spatial_attention(self, fm, beta):
+        """Calculate spatial attention with temperature scaling.
+
+        Args:
+            fm: Feature map of shape (N, C, H, W)
+            beta: Temperature parameter
+
+        Returns:
+            Spatial attention map of shape (N, 1, H, W)
+        """
+        N, C, H, W = fm.shape
+        fm_flat = fm.view(N, C, -1)
+
+        # Calculate spatial attention by averaging across channels
+        spatial_attn = torch.mean(torch.abs(fm_flat), dim=1, keepdim=True)  # (N, 1, H*W)
+        spatial_attn = spatial_attn.view(N, 1, H, W)
+
+        # Normalize with softmax and temperature
+        spatial_attn_flat = spatial_attn.view(N, -1)
+        spatial_attn_flat = F.softmax(spatial_attn_flat * beta, dim=1)
+        spatial_attn = spatial_attn_flat.view(N, 1, H, W)
+
+        return spatial_attn
+
+    def forward(self, y_s, y_t):
+        """Forward computation.
+
+        Args:
+            y_s (list): Student feature maps
+            y_t (list): Teacher feature maps
+
+        Returns:
+            torch.Tensor: Spatial attention transfer loss
+        """
+        assert len(y_s) == len(y_t)
+        losses = []
+
+        for idx, (s, t) in enumerate(zip(y_s, y_t)):
+            # Apply channel attention to teacher features
+            if idx < len(self.channel_attention):
+                channel_weight = self.channel_attention[idx](t)
+                t_weighted = t * channel_weight
+            else:
+                t_weighted = t
+
+            # Calculate spatial attention maps
+            s_spatial = self.spatial_attention(s, self.beta)
+            t_spatial = self.spatial_attention(t_weighted, self.beta)
+
+            # L2 loss between spatial attention maps
+            loss = F.mse_loss(s_spatial, t_spatial)
+            losses.append(loss)
+
+        return sum(losses)
+
+
 class FeatureLoss(nn.Module):
     def __init__(self, channels_s, channels_t, distiller='mgd', loss_weight=2.5):  # Increased loss_weight from 1.0 to 2.5
         super(FeatureLoss, self).__init__()
@@ -183,6 +325,10 @@ class FeatureLoss(nn.Module):
             self.feature_loss = MGDLoss(channels_s, channels_t)
         elif distiller == 'cwd':
             self.feature_loss = CWDLoss(channels_s, channels_t)
+        elif distiller == 'att':
+            self.feature_loss = AttentionLoss(channels_s, channels_t)
+        elif distiller == 'spa':
+            self.feature_loss = SpatialAttentionLoss(channels_s, channels_t)
         else:
             raise NotImplementedError
 
@@ -200,6 +346,11 @@ class FeatureLoss(nn.Module):
             
             if self.distiller == "cwd":
                 # Apply alignment and normalization
+                s = self.align_module[idx](s)
+                stu_feats.append(s)
+                tea_feats.append(t.detach())
+            elif self.distiller in ["att", "spa"]:
+                # Attention-based distillers: align student to teacher channel dimension
                 s = self.align_module[idx](s)
                 stu_feats.append(s)
                 tea_feats.append(t.detach())
