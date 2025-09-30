@@ -432,6 +432,10 @@ class BaseTrainer:
         self.loss = None
         self.tloss = None
         self.loss_names = ["Loss"]
+
+        # Early stopping
+        self.patience_counter = 0
+        self.best_epoch = 0
         self.csv = self.save_dir / "results.csv"
         self.plot_idx = [0, 1, 2]
 
@@ -717,6 +721,18 @@ class BaseTrainer:
                             dynamic_tau = 2.0      # Mid: balanced distributions
                         else:
                             dynamic_tau = 1.5      # Late: sharp distributions
+                    elif self.epochs <= 220:
+                        # Optimized 200 epoch schedule (based on 300ep analysis)
+                        if epoch < 30:
+                            dynamic_tau = 3.0      # 0-30: soft distributions
+                        elif epoch < 80:
+                            dynamic_tau = 2.7      # 30-80: moderate-soft
+                        elif epoch < 120:
+                            dynamic_tau = 2.3      # 80-120: moderate
+                        elif epoch < 160:
+                            dynamic_tau = 2.0      # 120-160: moderate-sharp
+                        else:
+                            dynamic_tau = 1.5      # 160-200: sharp distributions
                     else:
                         # Extended schedule for 300+ epochs - more gradual transitions
                         progress = epoch / self.epochs
@@ -740,6 +756,19 @@ class BaseTrainer:
                             distill_weight = 0.3 * (1 - (epoch - 40) / 60)  # 0.3 → 0 by epoch 100
                         else:
                             distill_weight = 0.05  # Very minimal KD after epoch 100
+                    elif self.epochs <= 220:
+                        # Optimized 200 epoch schedule (avoid overfitting)
+                        if epoch < 70:
+                            # Phase 1: Strong distillation 1.5 → 0.7
+                            distill_weight = 1.5 * (1 - epoch / 70) + 0.7
+                        elif epoch < 140:
+                            # Phase 2: Moderate distillation 0.7 → 0.2
+                            progress = (epoch - 70) / 70
+                            distill_weight = 0.7 * (1 - progress) + 0.2
+                        else:
+                            # Phase 3: Weak distillation 0.2 → 0.05
+                            progress = (epoch - 140) / 60
+                            distill_weight = 0.2 * (1 - progress) + 0.05
                     else:
                         # Extended schedule for 300+ epochs - longer KD phases
                         mid_point = self.epochs // 3     # 100 epochs for 300ep
@@ -991,6 +1020,20 @@ class BaseTrainer:
         fitness = metrics.pop("fitness", -self.loss.detach().cpu().numpy())  # use loss as fitness measure if not found
         if not self.best_fitness or self.best_fitness < fitness:
             self.best_fitness = fitness
+            self.best_epoch = self.epoch
+            self.patience_counter = 0  # Reset counter when improvement found
+        else:
+            self.patience_counter += 1  # Increment counter when no improvement
+
+        # Early stopping check (patience is set via args.patience, default 100)
+        if self.args.patience > 0 and self.patience_counter >= self.args.patience:
+            LOGGER.info(
+                f"\n{colorstr('EarlyStopping:')} Training stopped early. "
+                f"No improvement in {self.patience_counter} epochs. "
+                f"Best results at epoch {self.best_epoch} with fitness={self.best_fitness:.5f}"
+            )
+            self.stop = True  # Set stop flag to halt training
+
         return metrics, fitness
 
     def get_model(self, cfg=None, weights=None, verbose=True):

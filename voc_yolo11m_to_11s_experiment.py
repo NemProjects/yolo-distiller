@@ -67,13 +67,17 @@ def run_baseline_yolo11s(epochs=70, batch=64, workers=12):  # Changed to 70 epoc
         "results": results
     }
 
-def run_kd_yolo11m_to_11s(epochs=70, batch=64, workers=12, name_suffix=""):  # Changed to 70 epochs for thorough KD validation
+def run_kd_yolo11m_to_11s(epochs=70, batch=64, workers=12, name_suffix="", patience=100, weight_decay=0.0005):  # Changed to 70 epochs for thorough KD validation
     """YOLOv11m → YOLOv11s Knowledge Distillation 학습"""
     print("=" * 60)
     print("🎓 YOLOv11m → YOLOv11s KD 학습 시작")
     print(f"📊 설정: epochs={epochs}, batch={batch}, workers={workers}")
     if name_suffix:
         print(f"📂 실험명 접미사: {name_suffix}")
+    if patience != 100:
+        print(f"🛑 Early stopping: patience={patience}")
+    if weight_decay != 0.0005:
+        print(f"⚖️  Weight decay: {weight_decay} (강화된 regularization)")
     print("=" * 60)
 
     start_time = time.time()
@@ -95,8 +99,10 @@ def run_kd_yolo11m_to_11s(epochs=70, batch=64, workers=12, name_suffix=""):  # C
         teacher=teacher_model.model,
         distillation_loss="cwd",
         epochs=epochs,
+        patience=patience,
         batch=batch,
         workers=workers,
+        weight_decay=weight_decay,
         exist_ok=True,
         name=experiment_name
     )
@@ -539,6 +545,62 @@ def test_extended_kd_300():
         "improvement_percent": improvement
     }
 
+def test_optimized_kd_200():
+    """최적화된 KD 테스트 - 200 에포크 + Early Stopping + Weight Decay"""
+    print("🚀 최적화된 KD 테스트 시작 (200 에포크)")
+    print("📊 300 에포크 분석 기반 최적화 적용")
+    print("✅ 개선사항:")
+    print("   - 200 에포크 제한 (최적점 164 + 여유 36)")
+    print("   - Early stopping: patience=25 (자동 과적합 방지)")
+    print("   - Weight decay: 0.001 (기존 0.0005에서 2배 강화)")
+    print("   - 최적화된 200ep 스케줄링")
+    print("   - 목표: 베이스라인 대비 1.0~1.3% 성능 향상")
+
+    # 기존 베이스라인 성능 추출
+    print("\\n1️⃣ 기존 베이스라인에서 70 에포크 성능 추출")
+    baseline_csv = "/workspace/projects/ed/jin/yolo-distiller/runs/detect/voc_baseline_yolo11s_optimized_20250928_095825/results.csv"
+    baseline_metrics = extract_epoch_metrics(baseline_csv, 70)
+
+    if baseline_metrics:
+        print(f"   ✅ 베이스라인 70 에포크 성능:")
+        print(f"      mAP50-95: {baseline_metrics['metrics/mAP50-95(B)']:.5f} ({baseline_metrics['metrics/mAP50-95(B)']*100:.2f}%)")
+    else:
+        print("   ❌ 베이스라인 데이터를 찾을 수 없습니다.")
+        return
+
+    # KD 200 에포크 최적화 학습
+    print("\\n2️⃣ YOLOv11m → YOLOv11s Optimized KD 200 에포크 학습")
+    print("   ⏰ 예상 소요시간: ~7.5시간 (early stopping으로 단축 가능)")
+    kd_result = run_kd_yolo11m_to_11s(
+        epochs=200,
+        patience=25,
+        batch=64,
+        workers=12,
+        weight_decay=0.001,
+        name_suffix="200ep_optimized"
+    )
+    kd_metrics = extract_metrics_from_results(kd_result["model_path"].parent.parent)
+
+    # 결과 비교
+    print("\\n3️⃣ 최종 성능 비교")
+    improvement = ((kd_metrics['metrics/mAP50-95(B)'] - baseline_metrics['metrics/mAP50-95(B)']) /
+                   baseline_metrics['metrics/mAP50-95(B)'] * 100)
+
+    print(f"   📈 베이스라인 (70 epochs): mAP50-95 = {baseline_metrics['metrics/mAP50-95(B)']*100:.2f}%")
+    print(f"   📈 KD 200ep optimized: mAP50-95 = {kd_metrics['metrics/mAP50-95(B)']*100:.2f}%")
+    print(f"   🎯 성능 향상: {improvement:.2f}% ({(kd_metrics['metrics/mAP50-95(B)'] - baseline_metrics['metrics/mAP50-95(B)'])*100:+.2f}%p)")
+
+    if improvement >= 1.0:
+        print("   ✅ 목표 달성! 1% 이상 성능 향상")
+    else:
+        print("   📊 추가 개선 방법 검토 필요")
+
+    return {
+        "baseline_metrics": baseline_metrics,
+        "kd_metrics": kd_metrics,
+        "improvement_percent": improvement
+    }
+
 if __name__ == "__main__":
     import sys
 
@@ -553,18 +615,21 @@ if __name__ == "__main__":
             test_extended_kd_150()
         elif sys.argv[1] == "extended_300":
             test_extended_kd_300()
+        elif sys.argv[1] == "optimized_200":
+            test_optimized_kd_200()
         elif sys.argv[1] == "thorough":
             test_thorough_kd()
         else:
             print("❌ 지원하지 않는 명령어입니다.")
-            print("사용 가능한 명령어: test, adaptive, kd_only, extended_150, extended_300, thorough")
+            print("사용 가능한 명령어: test, adaptive, kd_only, extended_150, extended_300, optimized_200, thorough")
     else:
         print("🚀 VOC YOLOv11m → YOLOv11s Knowledge Distillation 테스트")
         print("사용법: python voc_yolo11m_to_11s_experiment.py [command]")
         print("명령어:")
-        print("  test         - 1 에포크 테스트")
-        print("  adaptive     - 적응형 개선 실험")
-        print("  kd_only      - KD만 실행 (베이스라인 재사용)")
-        print("  extended_150 - 150 에포크 확장 KD")
-        print("  extended_300 - 300 에포크 확장 KD")
-        print("  thorough     - 완전한 실험 (베이스라인 + KD)")
+        print("  test          - 1 에포크 테스트")
+        print("  adaptive      - 적응형 개선 실험")
+        print("  kd_only       - KD만 실행 (베이스라인 재사용)")
+        print("  extended_150  - 150 에포크 확장 KD")
+        print("  extended_300  - 300 에포크 확장 KD")
+        print("  optimized_200 - 200 에포크 최적화 KD (Early stopping + Weight decay)")
+        print("  thorough      - 완전한 실험 (베이스라인 + KD)")
