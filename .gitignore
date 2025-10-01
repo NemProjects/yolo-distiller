@@ -146,6 +146,7 @@ runs/
 !runs/detect/voc_baseline_yolo11s_optimized_20250928_095825/
 !runs/detect/voc_kd_yolo11s_from_11m_optimized_20250930_102637_150ep_attention/
 !runs/detect/voc_kd_yolo11s_from_11m_optimized_20250930_191918_150ep_spatial_attention/
+!runs/detect/voc_kd_yolo11s_from_11m_hybrid_20251001_104907/
 runs/**/weights/*.pt
 wandb/
 .DS_Store
