@@ -329,6 +329,9 @@ class FeatureLoss(nn.Module):
             self.feature_loss = AttentionLoss(channels_s, channels_t)
         elif distiller == 'spa':
             self.feature_loss = SpatialAttentionLoss(channels_s, channels_t)
+        elif distiller == 'hybrid':
+            from hybrid_attention_kd import HybridAttentionLoss
+            self.feature_loss = HybridAttentionLoss(channels_s, channels_t)
         else:
             raise NotImplementedError
 
@@ -349,7 +352,7 @@ class FeatureLoss(nn.Module):
                 s = self.align_module[idx](s)
                 stu_feats.append(s)
                 tea_feats.append(t.detach())
-            elif self.distiller in ["att", "spa"]:
+            elif self.distiller in ["att", "spa", "hybrid"]:
                 # Attention-based distillers: align student to teacher channel dimension
                 s = self.align_module[idx](s)
                 stu_feats.append(s)
