@@ -389,10 +389,18 @@ class DistillationLoss:
         
         self._find_layers()
         
+        # Extract distiller type (handle both "cwd" and "cwdLoss" formats)
+        if distiller.lower().startswith('hybrid'):
+            distiller_type = 'hybrid'
+        elif len(distiller) > 3 and distiller.endswith('Loss'):
+            distiller_type = distiller[:3].lower()
+        else:
+            distiller_type = distiller[:3].lower()
+
         self.distill_loss_fn = FeatureLoss(
-            channels_s=self.channels_s, 
-            channels_t=self.channels_t, 
-            distiller=distiller[:3]
+            channels_s=self.channels_s,
+            channels_t=self.channels_t,
+            distiller=distiller_type
         )
         
     def _find_layers(self):
