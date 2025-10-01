@@ -49,13 +49,7 @@ class HybridAttentionLoss(nn.Module):
                 nn.Sigmoid()
             ).to(device) for _ in channels_t
         ])
-        
-        # Feature alignment modules for student
-        self.align_module = nn.ModuleList([
-            nn.Conv2d(s_chan, t_chan, 1).to(device)
-            for s_chan, t_chan in zip(channels_s, channels_t)
-        ])
-        
+
     def channel_attention_map(self, fm, idx):
         """Calculate channel attention using SE-style attention.
         
@@ -156,16 +150,13 @@ class HybridAttentionLoss(nn.Module):
         """
         assert len(y_s) == len(y_t), f"Mismatch: {len(y_s)} vs {len(y_t)}"
         losses = []
-        
+
         for idx, (s, t) in enumerate(zip(y_s, y_t)):
-            # Align student channels to teacher
-            if idx < len(self.align_module):
-                s_aligned = self.align_module[idx](s)
-            else:
-                s_aligned = s
-                
+            # Student features are already aligned by FeatureLoss
+            # No need for additional alignment here
+
             # Calculate hybrid attention maps
-            s_attention = self.hybrid_attention(s_aligned, idx)
+            s_attention = self.hybrid_attention(s, idx)
             t_attention = self.hybrid_attention(t, idx)
             
             # Calculate loss
