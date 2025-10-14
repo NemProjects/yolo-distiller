@@ -1,0 +1,6 @@
+Metric,Baseline (70ep),Attention KD (best),Improvement
+mAP50-95,68.15%,69.45%,+1.30%p
+mAP50,86.12%,87.29%,+1.16%p
+Precision,84.06%,84.20%,+0.14%p
+Recall,80.17%,80.92%,+0.75%p
+Best Epoch,70,105,+35
